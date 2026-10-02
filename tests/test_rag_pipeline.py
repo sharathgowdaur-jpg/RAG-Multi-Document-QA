@@ -2,6 +2,7 @@ import os
 import sys
 import io
 import shutil
+import tempfile
 from unittest.mock import MagicMock
 
 # Add project root to sys.path
@@ -236,66 +237,68 @@ def run_all_tests():
     assert "vectorstore_ready" in status_json
     print(f"  GET /api/status returned: {status_json}")
 
-    # Test POST /api/upload with sample PDF
-    test_upload_path = os.path.join("documents", "upload_test.pdf")
-    create_sample_pdf(test_upload_path, "Flask REST API serves RAG answers.", "Deep learning powers the modern web.")
-    
-    with open(test_upload_path, "rb") as f:
-        data = {
-            'files': (io.BytesIO(f.read()), 'upload_test.pdf')
-        }
-        res_upload = client.post('/api/upload', data=data, content_type='multipart/form-data')
-        assert res_upload.status_code == 200
-        assert res_upload.get_json()["success"] is True
-        print("  POST /api/upload uploaded test PDF successfully.")
+    # Test POST /api/upload with sample PDF in isolated temporary directory
+    test_upload_dir = tempfile.mkdtemp(prefix="rag_test_upload_")
+    test_upload_path = os.path.join(test_upload_dir, "upload_test.pdf")
+    try:
+        create_sample_pdf(test_upload_path, "Flask REST API serves RAG answers.", "Deep learning powers the modern web.")
 
-    # Test POST /api/index
-    res_index = client.post('/api/index')
-    assert res_index.status_code == 200
-    assert res_index.get_json()["success"] is True
-    print(f"  POST /api/index response: {res_index.get_json()}")
+        with open(test_upload_path, "rb") as f:
+            data = {
+                'files': (io.BytesIO(f.read()), 'upload_test.pdf')
+            }
+            res_upload = client.post('/api/upload', data=data, content_type='multipart/form-data')
+            assert res_upload.status_code == 200
+            assert res_upload.get_json()["success"] is True
+            print("  POST /api/upload uploaded test PDF successfully.")
 
-    # Test POST /api/chat
-    res_chat = client.post('/api/chat', json={"question": "What powers the modern web?"})
-    assert res_chat.status_code == 200
-    chat_json = res_chat.get_json()
-    assert chat_json["success"] is True
-    assert "answer" in chat_json
-    assert "response_time" in chat_json
-    print(f"  POST /api/chat answer: {chat_json['answer']}")
-    print(f"  POST /api/chat timing: {chat_json['response_time']}")
-    print(f"  POST /api/chat sources: {chat_json.get('sources')}")
+        # Test POST /api/index
+        res_index = client.post('/api/index')
+        assert res_index.status_code == 200
+        assert res_index.get_json()["success"] is True
+        print(f"  POST /api/index response: {res_index.get_json()}")
 
+        # Test POST /api/chat
+        res_chat = client.post('/api/chat', json={"question": "What powers the modern web?"})
+        assert res_chat.status_code == 200
+        chat_json = res_chat.get_json()
+        assert chat_json["success"] is True
+        assert "answer" in chat_json
+        assert "response_time" in chat_json
+        print(f"  POST /api/chat answer: {chat_json['answer']}")
+        print(f"  POST /api/chat timing: {chat_json['response_time']}")
+        print(f"  POST /api/chat sources: {chat_json.get('sources')}")
 
-    # Test GET /api/health
-    res_health = client.get('/api/health')
-    assert res_health.status_code == 200
-    health_json = res_health.get_json()
-    assert health_json.get("status") in ("ok", "ready") or "gemini_configured" in health_json
-    print(f"  GET /api/health returned: {health_json}")
+        # Test GET /api/health
+        res_health = client.get('/api/health')
+        assert res_health.status_code == 200
+        health_json = res_health.get_json()
+        assert health_json.get("status") in ("ok", "ready") or "gemini_configured" in health_json
+        print(f"  GET /api/health returned: {health_json}")
 
-    # Test GET /api/test-rag
-    res_test_rag = client.get('/api/test-rag')
-    assert res_test_rag.status_code == 200
-    test_rag_json = res_test_rag.get_json()
-    assert "gemini_test" in test_rag_json
-    print(f"  GET /api/test-rag returned: {test_rag_json}")
+        # Test GET /api/test-rag
+        res_test_rag = client.get('/api/test-rag')
+        assert res_test_rag.status_code == 200
+        test_rag_json = res_test_rag.get_json()
+        assert "gemini_test" in test_rag_json
+        print(f"  GET /api/test-rag returned: {test_rag_json}")
 
-    # Test POST /api/chat with unrelated question (Fallback check)
-    res_unrelated = client.post('/api/chat', json={"question": "What is the capital of Mars?"})
-    assert res_unrelated.status_code == 200
-    unrelated_json = res_unrelated.get_json()
-    assert unrelated_json["success"] is True
-    print(f"  POST /api/chat unrelated question answer: {unrelated_json['answer']}")
+        # Test POST /api/chat with unrelated question (Fallback check)
+        res_unrelated = client.post('/api/chat', json={"question": "What is the capital of Mars?"})
+        assert res_unrelated.status_code == 200
+        unrelated_json = res_unrelated.get_json()
+        assert unrelated_json["success"] is True
+        print(f"  POST /api/chat unrelated question answer: {unrelated_json['answer']}")
 
-    # Test POST /api/reset
-    res_reset = client.post('/api/reset')
-    assert res_reset.status_code == 200
-    assert res_reset.get_json()["success"] is True
-    print("  POST /api/reset cleared documents and index.")
+        # Test POST /api/reset
+        res_reset = client.post('/api/reset')
+        assert res_reset.status_code == 200
+        assert res_reset.get_json()["success"] is True
+        print("  POST /api/reset cleared documents and index.")
 
-    if os.path.exists(test_upload_path):
-        os.remove(test_upload_path)
+    finally:
+        if os.path.exists(test_upload_dir):
+            shutil.rmtree(test_upload_dir, ignore_errors=True)
 
     print("\n" + "=" * 70)
     print("ALL 12 TEST SUITES AND FLASK REST API VERIFIED SUCCESSFULLY!")
